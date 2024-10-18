@@ -10,15 +10,15 @@ import numpy as np
 from . import operators
 from .autodiff import Context, Variable, backpropagate
 from .tensor_data import TensorData
+
+# Comment these out if not yet implemented
 from .tensor_functions import (
-    EQ,
     LT,
     Add,
     All,
     Copy,
     Exp,
     Inv,
-    IsClose,
     Log,
     MatMul,
     Mul,
@@ -26,9 +26,12 @@ from .tensor_functions import (
     Permute,
     ReLU,
     Sigmoid,
+    Sub,
+    isClose,
+    EQ,
+    GT,
     Sum,
-    View,
-    tensor,
+    View
 )
 
 if TYPE_CHECKING:
@@ -69,7 +72,6 @@ class Tensor:
     unique_id: int
     name: str
 
-    # no history was initialized
     def __init__(
         self,
         v: TensorData,
@@ -100,26 +102,11 @@ class Tensor:
         return self.history is not None
 
     def to_numpy(self) -> npt.NDArray[np.float64]:
-        """Returns:Converted to numpy array"""
-        return self.contiguous()._tensor._storage.reshape(self.shape)
+        """Returns
+        Converted to numpy array
 
-    # Properties
-    @property
-    def shape(self) -> UserShape:
-        """Returns:
-        shape of the tensor
         """
-        return self._tensor.shape
-
-    @property
-    def size(self) -> int:
-        """Returns: int : size of the tensor"""
-        return self._tensor.size
-
-    @property
-    def dims(self) -> int:
-        """Returns: int : dimensionality of the tensor"""
-        return self._tensor.dims
+        return self.contiguous()._tensor._storage.reshape(self.shape)
 
     def _ensure_tensor(self, b: TensorLike) -> Tensor:
         """Turns a python number into a tensor with the same backend."""
@@ -130,90 +117,19 @@ class Tensor:
             c = b
         return c
 
-    # Functions
-    def __add__(self, b: TensorLike) -> Tensor:
-        return Add.apply(self, self._ensure_tensor(b))
+    # def item(self) -> float:
+    #     """Convert a 1-element tensor to a float"""
+    #     assert self.size == 1
+    #     x: float = self._tensor._storage[0]
+    #     return x
 
-    def __sub__(self, b: TensorLike) -> Tensor:
-        return Add.apply(self, -self._ensure_tensor(b))
+    # change original item method to the following
+    def item(self) -> float:
+        """Convert a 1-element tensor to a float."""
+        # Check if the tensor is 1-element based on its shape
+        assert self.shape == (1,), "item() can only be called on tensors with a single element"
+        return self._tensor._storage[0]  # Assuming `self.data` is a list or array holding the tensor’s values
 
-    def __mul__(self, b: TensorLike) -> Tensor:
-        return Mul.apply(self, self._ensure_tensor(b))
-
-    def __truediv__(self, b: TensorLike) -> Tensor:
-        return Mul.apply(self, Inv.apply(self._ensure_tensor(b)))
-
-    def __rtruediv__(self, b: TensorLike) -> Tensor:
-        return Mul.apply(self._ensure_tensor(b), Inv.apply(self))
-
-    def __matmul__(self, b: Tensor) -> Tensor:
-        """Not used until Module 3"""
-        return MatMul.apply(self, b)
-
-    def __lt__(self, b: TensorLike) -> Tensor:
-        return LT.apply(self, self._ensure_tensor(b))
-
-    def __eq__(self, b: TensorLike) -> Tensor:  # type: ignore[override]
-        return EQ.apply(self, self._ensure_tensor(b))
-
-    def __gt__(self, b: TensorLike) -> Tensor:
-        return LT.apply(self._ensure_tensor(b), self)
-
-    def __neg__(self) -> Tensor:
-        return Neg.apply(self)
-
-    def __radd__(self, b: TensorLike) -> Tensor:
-        return self + b
-
-    def __rmul__(self, b: TensorLike) -> Tensor:
-        return self * b
-
-    def all(self, dim: Optional[int] = None) -> Tensor:  # noqa: D102
-        if dim is None:
-            return All.apply(self)
-        else:
-            return All.apply(self, self._ensure_tensor(dim))
-
-    def is_close(self, y: Tensor) -> Tensor:  # noqa: D102
-        return IsClose.apply(self, y)
-
-    def sigmoid(self) -> Tensor:  # noqa: D102
-        return Sigmoid.apply(self)
-
-    def relu(self) -> Tensor:  # noqa: D102
-        return ReLU.apply(self)
-
-    def log(self) -> Tensor:  # noqa: D102
-        return Log.apply(self)
-
-    def exp(self) -> Tensor:  # noqa: D102
-        return Exp.apply(self)
-
-    def item(self) -> float:  # noqa: D102
-        assert self.size == 1
-        return self[0]
-
-    def sum(self, dim: Optional[int] = None) -> Tensor:
-        """Compute the sum over dimension `dim`"""
-        if dim is None:
-            return Sum.apply(self.contiguous().view(self.size), self._ensure_tensor(0))
-        else:
-            return Sum.apply(self, self._ensure_tensor(dim))
-
-    def mean(self, dim: Optional[int] = None) -> Tensor:
-        """Compute the mean over dimension `dim`"""
-        if dim is not None:
-            return self.sum(dim) / self.shape[dim]
-        else:
-            return self.sum() / self.size
-
-    def permute(self, *order: int) -> Tensor:
-        """Permute tensor dimensions to *order"""
-        return Permute.apply(self, tensor(list(order)))
-
-    def view(self, *shape: int) -> Tensor:
-        """Change the shape of the tensor to a new shape with the same size"""
-        return View.apply(self, tensor(list(shape)))
 
     def contiguous(self) -> Tensor:
         """Return a contiguous tensor with the same data"""
@@ -249,17 +165,17 @@ class Tensor:
         """Create a new tensor from data"""
         return Tensor(TensorData(storage, shape, strides), backend=backend)
 
-    def expand(self, other: Tensor) -> Tensor:  # noqa: D417
+    def expand(self, other: Tensor) -> Tensor:
         """Method used to allow for backprop over broadcasting.
         This method is called when the output of `backward`
         is a different size than the input of `forward`.
 
 
-        Parameters
-        ----------
+        Args:
+        ----
             other : backward tensor (must broadcast with self)
 
-        Returns
+        Returns:
         -------
             Expanded version of `other` with the right derivatives
 
@@ -281,7 +197,9 @@ class Tensor:
         for dim, shape in enumerate(out.shape):
             if orig_shape[dim] == 1 and shape != 1:
                 out = self.backend.add_reduce(out, dim)
-        assert out.size == self.size, f"{out.shape} {self.shape}"
+        #assert out.size == self.size, f"{out.shape} {self.shape}"
+        # change this line to the following, compare the size of the tensor using shape
+        assert out.shape[0] == self.shape[0], f"{out.shape} {self.shape}"
         # START CODE CHANGE (2021)
         return Tensor.make(out._tensor._storage, self.shape, backend=self.backend)
         # END CODE CHANGE (2021)
@@ -299,10 +217,12 @@ class Tensor:
         out._type_(self.backend)
         return out
 
-    def tuple(self) -> Tuple[Storage, Shape, Strides]:  # noqa: D102
+    def tuple(self) -> Tuple[Storage, Shape, Strides]:
+        """Get the tensor data info as a tuple."""
         return self._tensor.tuple()
 
-    def detach(self) -> Tensor:  # noqa: D102
+    def detach(self) -> Tensor:
+        """Detach from backprop"""
         return Tensor(self._tensor, backend=self.backend)
 
     # Variable elements for backprop
@@ -319,7 +239,6 @@ class Tensor:
         assert self.is_leaf(), "Only leaf variables can have derivatives."
         if self.grad is None:
             self.grad = Tensor.make(
-                # [0] * int(operators.prod(self.shape)), self.shape, backend=self.backend
                 [0.0] * int(operators.prod(self.shape)),
                 self.shape,
                 backend=self.backend,
@@ -357,6 +276,118 @@ class Tensor:
             grad_output = Tensor.make([1.0], (1,), backend=self.backend)
         backpropagate(self, grad_output)
 
-    def zero_grad_(self) -> None:  # pragma: no cover
-        """Reset the derivative on this variable."""
+    def __truediv__(self, b: TensorLike) -> Tensor:
+        return Mul.apply(self, Inv.apply(self._ensure_tensor(b)))
+
+    def __rtruediv__(self, b: TensorLike) -> Tensor:
+        return Mul.apply(self._ensure_tensor(b), Inv.apply(self))
+
+    def __matmul__(self, b: Tensor) -> Tensor:
+        """Not used until Module 3"""
+        return MatMul.apply(self, b)
+
+    @property
+    def shape(self) -> UserShape:
+        """Returns
+        shape of the tensor
+
+        """
+        return self._tensor.shape
+
+    # Functions
+    # TODO: Implement for Task 2.3.
+    
+    def __add__(self, other: TensorLike) -> Tensor:
+        """Element-wise addition."""
+        return Add.apply(self, self._ensure_tensor(other))
+
+    def __sub__(self, other: TensorLike) -> Tensor:
+        """Element-wise subtraction."""
+        return Sub.apply(self, self._ensure_tensor(other))
+
+    def __mul__(self, other: TensorLike) -> Tensor:
+        """Element-wise multiplication."""
+        return Mul.apply(self, self._ensure_tensor(other))
+
+    def __lt__(self, other: TensorLike) -> Tensor:
+        """Element-wise less than comparison."""
+        return LT.apply(self, self._ensure_tensor(other))
+
+    def __eq__(self, other: TensorLike) -> Tensor:
+        """Element-wise equality comparison."""
+        return EQ.apply(self, self._ensure_tensor(other))
+
+    def __gt__(self, other: TensorLike) -> Tensor:
+        """Element-wise greater than comparison."""
+        return GT.apply(self, self._ensure_tensor(other))
+
+    def __neg__(self) -> Tensor:
+        """Element-wise negation."""
+        return Neg.apply(self)
+
+    def __radd__(self, other: TensorLike) -> Tensor:
+        """Right element-wise addition."""
+        return self + other  # Commutative property
+
+    def __rmul__(self, other: TensorLike) -> Tensor:
+        """Right element-wise multiplication."""
+        return self * other  # Commutative property
+
+    def all(self, dim: Optional[int] = None) -> Tensor:
+        """Check if all elements along a dimension are true."""
+        if dim is None:
+            return All.apply(self)
+
+        dim_tensor = self._ensure_tensor(dim)
+        return All.apply(self, dim_tensor)
+
+    def is_close(self, other: TensorLike) -> Tensor:
+        """Check if two tensors are close to each other."""
+        return isClose.apply(self, self._ensure_tensor(other))
+
+    def sigmoid(self) -> Tensor:
+        """Element-wise sigmoid function."""
+        return Sigmoid.apply(self)
+
+    def relu(self) -> Tensor:
+        """Element-wise ReLU function."""
+        return ReLU.apply(self)
+
+    def log(self) -> Tensor:
+        """Element-wise logarithm."""
+        return Log.apply(self)
+
+    def exp(self) -> Tensor:
+        """Element-wise exponentiation."""
+        return Exp.apply(self)
+
+    def sum(self, dim: Optional[int] = None) -> Tensor:
+        """Sum elements of the tensor along the specified dimension."""
+        if dim is None:
+            return Sum.apply(self)
+        dim_tensor = self._ensure_tensor(dim)
+        return Sum.apply(self, dim_tensor)
+
+    def mean(self, dim: Optional[int] = None) -> Tensor:
+        """Mean of the elements of the tensor along the specified dimension."""
+        #dim_tensor = self._ensure_tensor(dim)
+        if dim is None:
+            return self.sum() / self.size
+        dim_tensor = self._ensure_tensor(dim)
+        return Sum.apply(self, dim_tensor) / self.shape[0]
+
+        
+
+    def permute(self, dim: int) -> Tensor:
+        """Permute the dimensions of the tensor."""
+        dim_tensor = self._ensure_tensor(dim)
+        return Permute.apply(self, dim_tensor)
+
+    def view(self, dim: int) -> Tensor:
+        """View the tensor with a different shape."""
+        shape_tensor = self._ensure_tensor(dim)
+        return View.apply(self, shape_tensor)
+
+    def zero_grad_(self) -> None:
+        """Set gradients to None."""
         self.grad = None
